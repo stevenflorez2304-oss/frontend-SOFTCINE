@@ -1,18 +1,16 @@
 /*eslint-disable react-refresh/only-export-components*/
-import { createContext, useContext, useState, useEffect } from "react"
+import { createContext, useContext, useState, useEffect } from "react";
+import { BACKEND_URL } from "../config";
 
-const AuthContext = createContext()
-
-const API_URL = import.meta.env.VITE_API_URL || '';
+const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`${API_URL}/api/me`, { credentials: 'include' })
+    fetch(`${BACKEND_URL}/api/me`, { credentials: 'include' })
       .then(res => {
         if (res.ok) {
           setIsAuthenticated(true)
@@ -37,7 +35,7 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     try {
-      const res = await fetch(`${API_URL}/api/login`, {
+      const res = await fetch(`${BACKEND_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -57,7 +55,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try {
-      await fetch(`${API_URL}/api/logout`, { method: 'POST', credentials: 'include' })
+      await fetch(`${BACKEND_URL}/api/logout`, { method: 'POST', credentials: 'include' });
     } catch (error) {
       console.error(error)
     } finally {
