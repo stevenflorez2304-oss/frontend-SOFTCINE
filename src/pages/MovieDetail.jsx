@@ -2,30 +2,60 @@ import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { getMovieDetail, getMovieCredits } from "../api";
 import { useFavorites } from "../context/FavoritesContext";
-import { TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE } from "../config";
+import { TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE, BACKEND_URL } from "../config";
 import Navbar from "../components/Navbar";
 import StarRating from "../components/StarRating";
-
 import { useAuth } from "../context/AuthContext";
+
+// ─── Helpers de API para comentarios ────────────────────────────────────────
+const COMENTARIOS_URL = `${BACKEND_URL}/api/comentarios`;
+
+async function fetchComentarios(movieId) {
+  const res = await fetch(`${COMENTARIOS_URL}?movieId=${movieId}`);
+  if (!res.ok) throw new Error("Error al cargar comentarios");
+  return res.json();
+}
+
+async function postComentario(data) {
+  const res = await fetch(COMENTARIOS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Error al publicar comentario");
+  return res.json();
+}
+
+async function deleteComentario(id) {
+  const res = await fetch(`${COMENTARIOS_URL}/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error("Error al eliminar comentario");
+}
 
 // ─── Formulario de Reseña con Validación ───────────────────────────────────
 function ReviewForm({ movieId }) {
   const { user } = useAuth();
-  const REVIEWS_KEY = `cinescope_reviews_${movieId}`;
 
   // Estado del formulario (controlado)
   const [form, setForm] = useState({ nombre: "", calificacion: 0, comentario: "" });
   // Errores de validación por campo
   const [errors, setErrors] = useState({});
-  // Reseñas guardadas para esta película
-  const [reviews, setReviews] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(REVIEWS_KEY)) || [];
-    } catch {
-      return [];
-    }
-  });
+  // Reseñas obtenidas del backend
+  const [reviews, setReviews] = useState([]);
+  const [loadingReviews, setLoadingReviews] = useState(true);
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // ── Cargar comentarios desde el backend al montar ─────────────────────────
+  useEffect(() => {
+    fetchComentarios(movieId)
+      .then(setReviews)
+      .catch(console.error)
+      .finally(() => setLoadingReviews(false));
+  }, [movieId]);
 
   // ── Validación de cada campo ──────────────────────────────────────────────
   const validate = (data) => {
@@ -54,7 +84,6 @@ function ReviewForm({ movieId }) {
   const handleChange = (field, value) => {
     const updated = { ...form, [field]: value };
     setForm(updated);
-    // Validar en tiempo real si ya hubo un intento de envío
     if (submitted) setErrors(validate(updated));
   };
 
@@ -64,36 +93,54 @@ function ReviewForm({ movieId }) {
     setErrors((prev) => ({ ...prev, [field]: errs[field] }));
   };
 
-  // ── Envío del formulario ──────────────────────────────────────────────────
-  const handleSubmit = (e) => {
+  // ── Envío del formulario → POST al backend ────────────────────────────────
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitted(true);
     const errs = validate(form);
     setErrors(errs);
-
-    if (Object.keys(errs).length > 0) return; // Detener si hay errores
+    if (Object.keys(errs).length > 0) return;
 
     const newReview = {
-      id: Date.now(),
+      movieId: String(movieId),
       nombre: form.nombre.trim(),
       calificacion: form.calificacion,
       comentario: form.comentario.trim(),
-      fecha: new Date().toLocaleDateString("es-CO", {
-        year: "numeric", month: "long", day: "numeric",
-      }),
+      fecha: new Date().toISOString(),
     };
-    const updatedReviews = [newReview, ...reviews];
-    localStorage.setItem(REVIEWS_KEY, JSON.stringify(updatedReviews));
-    setReviews(updatedReviews);
-    setForm({ nombre: "", calificacion: 0, comentario: "" });
-    setErrors({});
-    setSubmitted(false);
+
+    try {
+      setSaving(true);
+      const saved = await postComentario(newReview);
+      setReviews((prev) => [saved, ...prev]);
+      setForm({ nombre: "", calificacion: 0, comentario: "" });
+      setErrors({});
+      setSubmitted(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = (id) => {
-    const updatedReviews = reviews.filter((r) => r.id !== id);
-    localStorage.setItem(REVIEWS_KEY, JSON.stringify(updatedReviews));
-    setReviews(updatedReviews);
+  // ── Eliminar comentario → DELETE al backend ───────────────────────────────
+  const handleDelete = async (id) => {
+    try {
+      await deleteComentario(id);
+      setReviews((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const formatFecha = (iso) => {
+    try {
+      return new Date(iso).toLocaleDateString("es-CO", {
+        year: "numeric", month: "long", day: "numeric",
+      });
+    } catch {
+      return iso;
+    }
   };
 
   return (
@@ -186,14 +233,17 @@ function ReviewForm({ movieId }) {
 
         <button
           type="submit"
-          className="w-full py-3 bg-gradient-to-r from-amber-400 to-orange-500 text-black font-bold rounded-xl hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-orange-500/20"
+          disabled={saving}
+          className="w-full py-3 bg-gradient-to-r from-amber-400 to-orange-500 text-black font-bold rounded-xl hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-orange-500/20 disabled:opacity-50"
         >
-          Publicar reseña ✓
+          {saving ? "Publicando..." : "Publicar reseña ✓"}
         </button>
       </form>
 
-      {/* Lista de reseñas publicadas */}
-      {reviews.length > 0 && (
+      {/* Lista de reseñas */}
+      {loadingReviews ? (
+        <p className="text-gray-500 text-sm mt-6">Cargando reseñas...</p>
+      ) : reviews.length > 0 ? (
         <div className="mt-8 space-y-4">
           <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
             💬 Reseñas ({reviews.length})
@@ -206,7 +256,7 @@ function ReviewForm({ movieId }) {
               <div className="flex items-start justify-between gap-2 mb-2">
                 <span className="font-semibold text-white text-sm">{r.nombre}</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-gray-600 text-xs flex-shrink-0">{r.fecha}</span>
+                  <span className="text-gray-600 text-xs flex-shrink-0">{formatFecha(r.fecha)}</span>
                   {user?.role === "admin" && (
                     <button
                       onClick={() => handleDelete(r.id)}
@@ -223,7 +273,7 @@ function ReviewForm({ movieId }) {
             </div>
           ))}
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

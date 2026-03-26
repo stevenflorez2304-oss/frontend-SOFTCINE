@@ -19,6 +19,10 @@ export const TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
 // Idioma por defecto para las respuestas de la API
 export const TMDB_LANG = "es-MX";
 
+// URL base del backend (JSON Server + Auth)
+export const BACKEND_URL =
+  import.meta.env.VITE_BACKEND_URL || "http://localhost:3000";
+
 // Información general de la aplicación
 export const APP_INFO = {
   ficha: "3229207",
